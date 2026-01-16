@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Life Skills Dash</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --accent-primary: #38bdf8; /* Changed to Light Blue for "Skills" theme */
+            --accent-secondary: #4ade80;
+            --danger: #ef4444;
+            --text-light: #f8fafc;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1e293b;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: var(--text-light);
+            overflow: hidden;
+        }
+
+        #game-header {
+            text-align: center;
+            margin-bottom: 10px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        #question-display {
+            background: var(--bg-dark);
+            padding: 15px 25px;
+            border-radius: 12px;
+            border: 2px solid var(--accent-primary);
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        #canvas-container {
+            position: relative;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #0f172a;
+        }
+
+        canvas {
+            display: block;
+            background: #111827;
+        }
+
+        #ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .screen {
+            pointer-events: auto;
+            background: rgba(15, 23, 42, 0.95);
+            padding: 40px;
+            border-radius: 16px;
+            text-align: center;
+            border: 3px solid var(--accent-primary);
+            max-width: 500px;
+        }
+
+        button {
+            background: var(--accent-primary);
+            color: var(--bg-dark);
+            border: none;
+            padding: 12px 24px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.1s;
+            margin-top: 20px;
+        }
+
+        button:active { transform: scale(0.95); }
+
+        .stats {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            display: flex;
+            gap: 20px;
+            font-weight: bold;
+            color: var(--accent-secondary);
+            text-shadow: 1px 1px 2px black;
+        }
+
+        .controls-hint {
+            margin-top: 10px;
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<div id="game-header">
+    <h1 style="color: var(--accent-primary)">LIFE SKILLS DASH</h1>
+    <div id="question-display">Press Start to Begin!</div>
+</div>
+
+<div id="canvas-container">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-overlay">
+        <div id="start-screen" class="screen">
+            <h2>Life & Career Skills Quiz</h2>
+            <p>Answer questions by moving your player to the correct box.<br>Avoid the red "Stress Traps"!</p>
+            <p style="color: var(--accent-secondary); margin-top: 10px;">Warning: Correct answers increase trap speed and quantity!</p>
+            <p class="controls-hint">Use Arrow Keys or WASD to move.</p>
+            <button onclick="startGame()">START QUIZ</button>
+        </div>
+
+        <div id="game-over-screen" class="screen hidden">
+            <h2 id="over-title">Game Over!</h2>
+            <p id="final-score">Score: 0</p>
+            <button onclick="startGame()">TRY AGAIN</button>
+        </div>
+    </div>
+
+    <div class="stats">
+        <span>SCORE: <span id="score-val">0</span></span>
+        <span>LIVES: <span id="lives-val">3</span></span>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const questionEl = document.getElementById('question-display');
+    const scoreVal = document.getElementById('score-val');
+    const livesVal = document.getElementById('lives-val');
+    
+    // Config
+    const CANVAS_WIDTH = 800;
+    const CANVAS_HEIGHT = 500;
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+
+    let score = 0;
+    let lives = 3;
+    let gameActive = false;
+    let currentQuestion = null;
+    let enemies = [];
+    let vaults = [];
+    
+    // Difficulty tracking
+    let enemyCount = 3;
+    let enemyBaseSize = 15;
+
+    const player = {
+        x: CANVAS_WIDTH / 2,
+        y: CANVAS_HEIGHT / 2,
+        size: 20,
+        speed: 5
+    };
+
+    // Data from the Snake Quiz Request, converted to Dash format
+    const lifeSkillsQuestions = [
+        { q: "What does effective communication require most?", a: "Clear message and understanding", choices: ["Talking more than others", "Clear message and understanding", "Being confident", "Using advanced vocabulary"] },
+        { q: "Non-verbal communication includes:", a: "Tone of voice and body language", choices: ["Email", "Tone of voice and body language", "Grammar", "Text messages"] },
+        { q: "Active listening means:", a: "Fully focusing on the speaker", choices: ["Waiting for your turn to speak", "Nodding without listening", "Fully focusing on the speaker", "Agreeing with everything"] },
+        { q: "Personal identity is shaped mainly by:", a: "A mix of experiences, values, and environment", choices: ["One single experience", "Friends only", "A mix of experiences, values, and environment", "Age alone"] },
+        { q: "Assertive communication is best described as:", a: "Clear, respectful, and confident", choices: ["Aggressive and direct", "Passive and quiet", "Clear, respectful, and confident", "Avoiding conflict"] },
+        { q: "Which is an example of “I-statements”?", a: "“I feel frustrated when this happens.”", choices: ["“You always mess this up.”", "“I feel frustrated when this happens.”", "“That’s your fault.”", "“Whatever.”"] },
+        { q: "Digital communication requires extra care because:", a: "Tone can be misunderstood", choices: ["It is faster", "Tone can be misunderstood", "It is informal", "It uses technology"] },
+        { q: "A good decision usually considers:", a: "Consequences and values", choices: ["Only short-term benefits", "Other people’s opinions only", "Consequences and values", "Luck"] },
+        { q: "A trade-off means:", a: "You give up one thing to gain another", choices: ["You lose everything", "You get nothing", "You give up one thing to gain another", "You make no choice"] },
+        { q: "Long-term decisions often affect:", a: "Future opportunities", choices: ["Only today", "Only friends", "Future opportunities", "Nothing important"] },
+        { q: "Which is an example of a responsible choice?", a: "Planning ahead", choices: ["Ignoring consequences", "Blaming others", "Planning ahead", "Avoiding decisions"] },
+        { q: "Peer pressure is strongest when:", a: "You feel unsure of yourself", choices: ["You know your values", "You feel unsure of yourself", "You are alone", "You are prepared"] },
+        { q: "Mental health includes:", a: "Emotional, psychological, and social well-being", choices: ["Only happiness", "Emotional, psychological, and social well-being", "Physical fitness only", "Avoiding stress"] },
+        { q: "Stress becomes harmful when:", a: "It is constant and unmanaged", choices: ["It is short-term", "It motivates you", "It is constant and unmanaged", "It helps focus"] },
+        { q: "A healthy coping strategy is:", a: "Exercise or talking to someone", choices: ["Avoiding problems", "Exercise or talking to someone", "Using substances", "Ignoring emotions"] },
+        { q: "Sleep is important because it:", a: "Improves focus and health", choices: ["Wastes time", "Improves focus and health", "Only helps mood", "Is optional"] },
+        { q: "Balance means:", a: "Managing priorities realistically", choices: ["Doing everything perfectly", "Equal time for everything", "Managing priorities realistically", "Avoiding responsibility"] },
+        { q: "Which habit supports long-term wellness?", a: "Regular routines", choices: ["Skipping meals", "Regular routines", "Staying up late", "Avoiding exercise"] },
+        { q: "A budget helps you:", a: "Track and plan expenses", choices: ["Spend more money", "Track and plan expenses", "Avoid responsibility", "Earn more instantly"] },
+        { q: "Needs are best described as:", a: "Things required for survival", choices: ["Entertainment items", "Things required for survival", "Luxury items", "Wants"] },
+        { q: "Wants are:", a: "Optional", choices: ["Essential", "Mandatory", "Optional", "Required by law"] },
+        { q: "An emergency fund is used for:", a: "Unexpected expenses", choices: ["Vacations", "Unexpected expenses", "Shopping", "Entertainment"] },
+        { q: "Renting means:", a: "You pay to live somewhere temporarily", choices: ["You own the property", "You borrow money", "You pay to live somewhere temporarily", "You build equity"] },
+        { q: "A lease is:", a: "A legal contract", choices: ["A casual agreement", "A legal contract", "A receipt", "A budget plan"] },
+        { q: "One benefit of cooking at home is:", a: "Saving money", choices: ["Less control over food", "Higher costs", "Saving money", "Less nutrition"] },
+        { q: "Income is:", a: "Money you earn", choices: ["Money you spend", "Money you owe", "Money you earn", "Money you lose"] },
+        { q: "Credit allows you to:", a: "Borrow money with repayment", choices: ["Get free money", "Borrow money with repayment", "Avoid payment", "Cancel debt"] },
+        { q: "Interest is:", a: "Extra money earned or paid", choices: ["Extra money earned or paid", "A fine", "A discount", "A fee you never repay"] },
+        { q: "High interest debt is risky because:", a: "It grows over time", choices: ["It disappears", "It grows over time", "It lowers income", "It is optional"] },
+        { q: "A credit score affects:", a: "Loan approval and rates", choices: ["Your friendships", "Loan approval and rates", "Your grades", "Your job performance"] },
+        { q: "Saving early is important because:", a: "Interest works over time", choices: ["Money loses value", "Interest works over time", "It limits choices", "It prevents spending"] },
+        { q: "A career is best defined as:", a: "A long-term work path", choices: ["A single job", "Short-term work", "A long-term work path", "Volunteering only"] },
+        { q: "Skills are developed through:", a: "Practice and experience", choices: ["Talent alone", "Practice and experience", "Age", "Luck"] },
+        { q: "Transferable skills are:", a: "Useful in many careers", choices: ["Job-specific only", "Useful in many careers", "Useless skills", "School-only skills"] },
+        { q: "Education pathways include:", a: "Trades, college, university, and work experience", choices: ["Only university", "Trades, college, university, and work experience", "Only trades", "Only online learning"] },
+        { q: "A resume is used to:", a: "Showcase skills and experience", choices: ["Apply for loans", "Track grades", "Showcase skills and experience", "Create budgets"] },
+        { q: "A cover letter should:", a: "Be tailored to the job", choices: ["Repeat the resume word-for-word", "Be generic", "Be tailored to the job", "Be informal"] },
+        { q: "Goal setting works best when goals are:", a: "Clear and specific", choices: ["Vague", "Unrealistic", "Clear and specific", "Avoided"] },
+        { q: "Short-term goals help with:", a: "Long-term success", choices: ["Avoiding responsibility", "Long-term success", "Confusion", "Stress only"] },
+        { q: "Time management is important because it:", a: "Helps balance responsibilities", choices: ["Creates stress", "Helps balance responsibilities", "Eliminates work", "Reduced sleep"] },
+        { q: "Procrastination often leads to:", a: "Increased stress", choices: ["Better work", "Less stress", "Increased stress", "More free time"] },
+        { q: "Self-reflection helps you:", a: "Understand growth and areas to improve", choices: ["Judge others", "Avoid mistakes", "Understand growth and areas to improve", "Change the past"] },
+        { q: "Personal values guide:", a: "Decision-making", choices: ["Random choices", "Decision-making", "Other people", "Laws"] },
+        { q: "Life Transitions focuses on:", a: "Real-world skills", choices: ["Memorization", "Exams only", "Real-world skills", "Theory without practice"] },
+        { q: "Learning from mistakes means:", a: "Adjusting future choices", choices: ["Feeling embarrassed", "Ignoring failure", "Adjusting future choices", "Giving up"] },
+        { q: "Independence means:", a: "Taking responsibility for choices", choices: ["Doing everything alone", "Avoiding help", "Taking responsibility for choices", "Ignoring others"] },
+        { q: "Adaptability is important because:", a: "Life is unpredictable", choices: ["Life never changes", "Plans always work", "Life is unpredictable", "Choices don’t matter"] },
+        { q: "A growth mindset focuses on:", a: "Learning and improvement", choices: ["Fixed ability", "Learning and improvement", "Avoiding challenges", "Comparison"] },
+        { q: "Healthy relationships are built on:", a: "Trust and communication", choices: ["Control", "Trust and communication", "Fear", "Competition"] },
+        { q: "The main goal of this course is to:", a: "Prepare for adulthood", choices: ["Pass a test", "Prepare for adulthood", "Avoid responsibility", "Memorize facts"] }
+    ];
+
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function createEnemy(size = enemyBaseSize) {
+        // Find position far from player to avoid instant death on spawn
+        let x, y;
+        do {
+            x = Math.random() * CANVAS_WIDTH;
+            y = Math.random() * CANVAS_HEIGHT;
+        } while (Math.hypot(x - player.x, y - player.y) < 200);
+
+        return {
+            x: x,
+            y: y,
+            size: size,
+            dx: (Math.random() - 0.5) * 6,
+            dy: (Math.random() - 0.5) * 6
+        };
+    }
+
+    function initLevel(isNewQuestion = true) {
+        player.x = CANVAS_WIDTH / 2;
+        player.y = CANVAS_HEIGHT / 2;
+        
+        if (isNewQuestion) {
+            currentQuestion = lifeSkillsQuestions[Math.floor(Math.random() * lifeSkillsQuestions.length)];
+            questionEl.innerText = currentQuestion.q;
+        }
+
+        vaults = [];
+        // Increased width from 120 to 160 to handle longer text
+        const boxWidth = 160; 
+        const boxHeight = 70; // Slightly taller
+
+        const positions = [
+            { x: 50, y: 50 },
+            { x: CANVAS_WIDTH - (boxWidth + 50), y: 50 },
+            { x: 50, y: CANVAS_HEIGHT - (boxHeight + 50) },
+            { x: CANVAS_WIDTH - (boxWidth + 50), y: CANVAS_HEIGHT - (boxHeight + 50) }
+        ];
+
+        const shuffledChoices = [...currentQuestion.choices].sort(() => Math.random() - 0.5);
+        
+        positions.forEach((pos, i) => {
+            vaults.push({
+                x: pos.x,
+                y: pos.y,
+                w: boxWidth, 
+                h: boxHeight,
+                text: shuffledChoices[i],
+                isCorrect: shuffledChoices[i] === currentQuestion.a
+            });
+        });
+
+        // Regenerate current enemies at current difficulty
+        enemies = [];
+        for(let i = 0; i < enemyCount; i++) {
+            enemies.push(createEnemy(enemyBaseSize));
+        }
+    }
+
+    function startGame() {
+        score = 0;
+        lives = 3;
+        enemyCount = 3;
+        enemyBaseSize = 15;
+        gameActive = true;
+        scoreVal.innerText = score;
+        livesVal.innerText = lives;
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('game-over-screen').classList.add('hidden');
+        initLevel();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function handleLifeLoss() {
+        lives--;
+        livesVal.innerText = lives;
+        // Reset difficulty metrics slightly on death
+        enemyCount = 3;
+        enemyBaseSize = 15;
+        
+        if (lives <= 0) {
+            gameOver();
+        } else {
+            initLevel(false); 
+        }
+    }
+
+    function gameOver() {
+        gameActive = false;
+        document.getElementById('game-over-screen').classList.remove('hidden');
+        document.getElementById('final-score').innerText = "Final Score: " + score;
+    }
+
+    function update() {
+        if (!gameActive) return;
+
+        if (keys['ArrowUp'] || keys['KeyW']) player.y -= player.speed;
+        if (keys['ArrowDown'] || keys['KeyS']) player.y += player.speed;
+        if (keys['ArrowLeft'] || keys['KeyA']) player.x -= player.speed;
+        if (keys['ArrowRight'] || keys['KeyD']) player.x += player.speed;
+
+        player.x = Math.max(0, Math.min(CANVAS_WIDTH - player.size, player.x));
+        player.y = Math.max(0, Math.min(CANVAS_HEIGHT - player.size, player.y));
+
+        enemies.forEach(en => {
+            en.x += en.dx;
+            en.y += en.dy;
+
+            if (en.x - en.size <= 0 || en.x + en.size >= CANVAS_WIDTH) en.dx *= -1;
+            if (en.y - en.size <= 0 || en.y + en.size >= CANVAS_HEIGHT) en.dy *= -1;
+
+            const dist = Math.hypot((player.x + player.size/2) - en.x, (player.y + player.size/2) - en.y);
+            if (dist < (player.size/2) + en.size) {
+                handleLifeLoss();
+            }
+        });
+
+        vaults.forEach(v => {
+            if (player.x < v.x + v.w && player.x + player.size > v.x &&
+                player.y < v.y + v.h && player.y + player.size > v.y) {
+                if (v.isCorrect) {
+                    const basePoints = 100;
+                    // Score increases based on number of enemies and their size
+                    const pointsGained = Math.round(basePoints * (enemyCount * 0.5) * (enemyBaseSize / 15));
+                    score += pointsGained;
+                    scoreVal.innerText = score;
+
+                    // Increase difficulty
+                    enemyCount++;
+                    enemyBaseSize += 2;
+                    
+                    initLevel();
+                } else {
+                    handleLifeLoss();
+                }
+            }
+        });
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Draw Vaults
+        vaults.forEach(v => {
+            ctx.fillStyle = '#1e293b';
+            ctx.strokeStyle = varToHex('--accent-secondary');
+            ctx.lineWidth = 2;
+            ctx.fillRect(v.x, v.y, v.w, v.h);
+            ctx.strokeRect(v.x, v.y, v.w, v.h);
+            
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 12px Arial';
+            ctx.textAlign = 'center';
+            // Adjusted wrap Y position slightly
+            wrapText(ctx, v.text, v.x + v.w/2, v.y + 20, v.w - 10, 14);
+        });
+
+        // Draw Enemies
+        enemies.forEach(en => {
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.arc(en.x, en.y, en.size, 0, Math.PI * 2);
+            ctx.fill();
+            
+            const pulse = 5 + Math.sin(Date.now() / 200) * 5;
+            ctx.shadowBlur = pulse;
+            ctx.shadowColor = '#ef4444';
+        });
+        ctx.shadowBlur = 0;
+
+        // Draw Player
+        ctx.fillStyle = varToHex('--accent-primary');
+        ctx.beginPath();
+        ctx.roundRect(player.x, player.y, player.size, player.size, 4);
+        ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.font = 'bold 12px Arial';
+        ctx.textAlign = 'center';
+        // Generic smiley for Life Skills
+        ctx.fillText('☺', player.x + 10, player.y + 15);
+    }
+
+    // Helper to wrap text in answer boxes
+    function wrapText(context, text, x, y, maxWidth, lineHeight) {
+        const words = text.split(' ');
+        let line = '';
+        let testY = y;
+
+        // Start higher if text is very long
+        if(words.length > 5) testY = y - 5;
+
+        for (let n = 0; n < words.length; n++) {
+            let testLine = line + words[n] + ' ';
+            let metrics = context.measureText(testLine);
+            let testWidth = metrics.width;
+            if (testWidth > maxWidth && n > 0) {
+                context.fillText(line, x, testY);
+                line = words[n] + ' ';
+                testY += lineHeight;
+            } else {
+                line = testLine;
+            }
+        }
+        context.fillText(line, x, testY);
+    }
+
+    function varToHex(varName) {
+        return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    }
+
+    function gameLoop() {
+        update();
+        draw();
+        if (gameActive) requestAnimationFrame(gameLoop);
+    }
+</script>
+</body>
+</html>
